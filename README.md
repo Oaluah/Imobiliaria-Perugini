@@ -15,7 +15,7 @@ Sistema web para gestão imobiliária, desenvolvido com JavaScript, Express, Rea
 
 A navegação principal reúne essas funções em quatro áreas: visão geral; cadastros (imóveis e clientes); contratos e financeiro; agenda e administração (visitas e equipe).
 
-O sistema é um protótipo local para desenvolvimento acadêmico. Reajustes automáticos, alertas, auditoria e fluxos completos de encerramento de contratos ainda não estão implementados. Use somente dados fictícios. Fotos e documentos ficam em `api/uploads/`, relacionados aos registros do PostgreSQL; essa pasta é ignorada pelo Git.
+O sistema é um protótipo local para desenvolvimento acadêmico. O painel destaca cobranças em atraso e vencimentos próximos; reajustes são registrados manualmente com o percentual informado pela equipe. Consulta automática de índices, auditoria e fluxos completos de encerramento de contratos ainda não estão implementados. Use somente dados fictícios. Fotos e documentos ficam em `api/uploads/`, relacionados aos registros do PostgreSQL; essa pasta é ignorada pelo Git.
 
 ## Requisitos
 
