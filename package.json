@@ -1,0 +1,15 @@
+{
+  "name": "perugine-web",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["api", "web"],
+  "scripts": {
+    "dev": "concurrently -k -n API,WEB \"npm run dev --workspace=@perugine/api\" \"npm run dev --workspace=@perugine/web\"",
+    "db:generate": "npm run db:generate --workspace=@perugine/api",
+    "db:migrate": "npm run db:migrate --workspace=@perugine/api",
+    "db:push": "npm run db:push --workspace=@perugine/api",
+    "db:seed": "npm run db:seed --workspace=@perugine/api",
+    "db:studio": "npm run db:studio --workspace=@perugine/api"
+  },
+  "devDependencies": { "concurrently": "^9.2.1" }
+}

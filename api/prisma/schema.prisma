@@ -1,0 +1,181 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TipoCliente {
+  PROPRIETARIO
+  INQUILINO
+  FIADOR
+  INTERESSADO
+  FUNCIONARIO
+}
+
+enum StatusImovel {
+  DISPONIVEL
+  RESERVADO
+  ALUGADO
+  VENDIDO
+}
+
+enum StatusPagamento {
+  PENDENTE
+  PAGO
+  ATRASADO
+}
+
+enum StatusVisita {
+  AGENDADA
+  REALIZADA
+  CANCELADA
+}
+
+model Usuario {
+  id          Int                 @id @default(autoincrement())
+  nome        String
+  email       String              @unique
+  senhaHash   String
+  cargo       String              @default("CORRETOR")
+  ativo       Boolean             @default(true)
+  criadoEm    DateTime            @default(now())
+  atualizadoEm DateTime           @updatedAt
+  permissoes  PermissaoUsuario[]
+}
+
+model PermissaoUsuario {
+  id         Int      @id @default(autoincrement())
+  usuarioId  Int
+  chave      String
+  permitido  Boolean  @default(false)
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  @@unique([usuarioId, chave])
+}
+
+model Cliente {
+  id                    Int        @id @default(autoincrement())
+  nome                  String
+  email                 String?
+  telefone              String?
+  documento             String?    @unique
+  tipoDocumento         String?
+  tipo                  TipoCliente @default(INTERESSADO)
+  ativo                 Boolean    @default(true)
+  criadoEm              DateTime   @default(now())
+  atualizadoEm          DateTime   @updatedAt
+  contratosComoInquilino Contrato[] @relation("Inquilino")
+  contratosComoFiador   Contrato[] @relation("Fiador")
+  contratosComoProprietario Contrato[] @relation("Proprietario")
+  visitas               Visita[]
+  anexos                DocumentoCliente[]
+}
+
+model Imovel {
+  id           Int          @id @default(autoincrement())
+  codigo       String       @unique
+  titulo       String
+  endereco     String
+  cidade       String       @default("Andirá")
+  tipo         String?
+  quartos      Int          @default(0)
+  valor        Decimal      @db.Decimal(12, 2)
+  status       StatusImovel @default(DISPONIVEL)
+  observacoes  String?
+  criadoEm     DateTime     @default(now())
+  atualizadoEm DateTime     @updatedAt
+  contratos    Contrato[]
+  visitas      Visita[]
+  vistorias    Vistoria[]
+  fotos        FotoImovel[]
+}
+
+model Contrato {
+  id             Int       @id @default(autoincrement())
+  numero         String    @unique
+  imovelId       Int
+  inquilinoId    Int
+  proprietarioId Int
+  fiadorId       Int?
+  inicio         DateTime
+  fim            DateTime
+  diaVencimento  Int       @default(10)
+  valorAluguel   Decimal   @db.Decimal(12, 2)
+  indiceReajuste String?
+  ativo          Boolean   @default(true)
+  imovel         Imovel    @relation(fields: [imovelId], references: [id])
+  inquilino      Cliente   @relation("Inquilino", fields: [inquilinoId], references: [id])
+  proprietario   Cliente   @relation("Proprietario", fields: [proprietarioId], references: [id])
+  fiador         Cliente?  @relation("Fiador", fields: [fiadorId], references: [id])
+  pagamentos     Pagamento[]
+  aditamentos    Aditamento[]
+  criadoEm       DateTime  @default(now())
+}
+
+model Pagamento {
+  id         Int             @id @default(autoincrement())
+  contratoId Int
+  referencia String
+  vencimento DateTime
+  pagoEm     DateTime?
+  valor      Decimal         @db.Decimal(12, 2)
+  status     StatusPagamento @default(PENDENTE)
+  recibo     String?
+  contrato   Contrato        @relation(fields: [contratoId], references: [id])
+  criadoEm   DateTime        @default(now())
+  @@unique([contratoId, referencia])
+}
+
+model Visita {
+  id          Int      @id @default(autoincrement())
+  imovelId    Int
+  clienteId   Int
+  corretor    String?
+  inicio      DateTime
+  observacoes String?
+  status      StatusVisita @default(AGENDADA)
+  imovel      Imovel   @relation(fields: [imovelId], references: [id])
+  cliente     Cliente  @relation(fields: [clienteId], references: [id])
+}
+
+model Aditamento {
+  id            Int      @id @default(autoincrement())
+  contratoId    Int
+  aplicadoEm    DateTime @default(now())
+  valorAnterior Decimal  @db.Decimal(12, 2)
+  valorNovo     Decimal  @db.Decimal(12, 2)
+  indice        String?
+  contrato      Contrato @relation(fields: [contratoId], references: [id])
+}
+
+model Vistoria {
+  id          Int      @id @default(autoincrement())
+  imovelId    Int
+  tipo        String
+  realizadaEm DateTime @default(now())
+  descricao   String
+  imovel      Imovel   @relation(fields: [imovelId], references: [id])
+}
+
+model DocumentoCliente {
+  id           Int      @id @default(autoincrement())
+  clienteId    Int
+  categoria    String
+  nomeOriginal String
+  arquivo      String   @unique
+  mimeType     String
+  criadoEm     DateTime @default(now())
+  cliente      Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+}
+
+model FotoImovel {
+  id           Int      @id @default(autoincrement())
+  imovelId     Int
+  nomeOriginal String
+  arquivo      String   @unique
+  mimeType     String
+  posicao      Int      @default(0)
+  criadoEm     DateTime @default(now())
+  imovel       Imovel   @relation(fields: [imovelId], references: [id], onDelete: Cascade)
+}
