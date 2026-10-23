@@ -19,9 +19,8 @@ O sistema é um protótipo local para desenvolvimento acadêmico. O painel desta
 
 ## Requisitos
 
-- Node.js 22.12 ou superior na linha 22 (detectado: 22.17.1).
-- Git (já instalado).
-- Docker Desktop para Windows com WSL 2, ou PostgreSQL instalado localmente.
+- Node.js 22.12 ou superior na linha 22.
+- Docker Desktop para Windows com WSL 2, ou PostgreSQL.
 
 
 
