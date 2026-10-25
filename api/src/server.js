@@ -182,7 +182,7 @@ app.get("/api/financeiro", async (_req, res, next) => {
       where: { ativo: true },
       include: {
         imovel: { select: { id: true, codigo: true, titulo: true, endereco: true, cidade: true } },
-        inquilino: { select: { id: true, nome: true } },
+        inquilino: { select: { id: true, nome: true, documento: true, tipoDocumento: true } },
         proprietario: { select: { id: true, nome: true } },
         pagamentos: { orderBy: { vencimento: "asc" }, select: { id: true, referencia: true, vencimento: true, pagoEm: true, valor: true, status: true, recibo: true, formaPagamento: true, valorRecebido: true, troco: true } },
         aditamentos: { orderBy: { aplicadoEm: "desc" } }
