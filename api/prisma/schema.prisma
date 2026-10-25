@@ -70,6 +70,7 @@ model Cliente {
   contratosComoProprietario Contrato[] @relation("Proprietario")
   visitas               Visita[]
   anexos                DocumentoCliente[]
+  interesses            InteresseImovel[]
 }
 
 model Imovel {
@@ -89,6 +90,8 @@ model Imovel {
   visitas      Visita[]
   vistorias    Vistoria[]
   fotos        FotoImovel[]
+  chaves       ChaveImovel[]
+  interesses   InteresseImovel[]
 }
 
 model Contrato {
@@ -122,6 +125,9 @@ model Pagamento {
   valor      Decimal         @db.Decimal(12, 2)
   status     StatusPagamento @default(PENDENTE)
   recibo     String?
+  formaPagamento String?
+  valorRecebido Decimal?     @db.Decimal(12, 2)
+  troco      Decimal?        @db.Decimal(12, 2)
   contrato   Contrato        @relation(fields: [contratoId], references: [id])
   criadoEm   DateTime        @default(now())
   @@unique([contratoId, referencia])
@@ -146,6 +152,9 @@ model Aditamento {
   valorAnterior Decimal  @db.Decimal(12, 2)
   valorNovo     Decimal  @db.Decimal(12, 2)
   indice        String?
+  percentual    Decimal? @db.Decimal(8, 4)
+  periodoInicio DateTime?
+  periodoFim    DateTime?
   contrato      Contrato @relation(fields: [contratoId], references: [id])
 }
 
@@ -156,6 +165,34 @@ model Vistoria {
   realizadaEm DateTime @default(now())
   descricao   String
   imovel      Imovel   @relation(fields: [imovelId], references: [id])
+}
+
+model ChaveImovel {
+  id          Int      @id @default(autoincrement())
+  imovelId    Int
+  numero      String
+  localizacao String?
+  status      String   @default("DISPONIVEL")
+  retiradaPor String?
+  retiradaEm  DateTime?
+  devolvidaEm DateTime?
+  criadoEm    DateTime @default(now())
+  imovel      Imovel   @relation(fields: [imovelId], references: [id], onDelete: Cascade)
+  @@unique([imovelId, numero])
+}
+
+model InteresseImovel {
+  id          Int      @id @default(autoincrement())
+  imovelId    Int
+  clienteId   Int
+  prioridade  Int      @default(0)
+  observacoes String?
+  criadoEm    DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+  imovel      Imovel   @relation(fields: [imovelId], references: [id], onDelete: Cascade)
+  cliente     Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  @@unique([imovelId, clienteId])
+  @@index([imovelId, prioridade])
 }
 
 model DocumentoCliente {
