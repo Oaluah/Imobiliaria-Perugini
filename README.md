@@ -4,6 +4,13 @@ Sistema web acadêmico para apoiar a gestão de uma imobiliária. A aplicação 
 
 Este README explica como preparar e executar o projeto em um computador Windows. Não é necessário instalar PostgreSQL separadamente se você usar Docker Desktop.
 
+## Integrantes
+- Gustavo Favorin Agostinho
+- Heitor Vidal Luiz
+- Kaio Ignacio Pereira
+- Pedro Carulla Machado
+- Richard Ribeiro de Gouvea
+
 ## O que o sistema faz
 
 - **Visão geral:** indicadores da carteira, cobranças em atraso, contratos próximos do vencimento e recebimentos do dia.
@@ -25,6 +32,13 @@ Este é um protótipo local para desenvolvimento acadêmico. O reajuste depende 
 - Docker Desktop com WSL 2 **ou** uma instalação local do PostgreSQL 17.
 - Git, se você for clonar o repositório.
 - IntelliJ IDEA é opcional; qualquer terminal PowerShell também funciona.
+
+## Tecnologias usadas
+- PostgreSQL
+- Prisma
+- Node.js
+- Docker
+- React
 
 ## Preparar o projeto
 
