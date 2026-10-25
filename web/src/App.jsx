@@ -616,9 +616,54 @@ function PaymentReceiptForm({ contract, payment, onClose, onSave }) {
 
 function ReceiptModal({ contract, payment, onClose }) {
   const amount = Number(payment.valor);
-  const amountReceived = Number(payment.valorRecebido ?? payment.valor);
   const receivedAt = payment.pagoEm ? new Date(payment.pagoEm) : new Date();
-  return <div className="receipt-overlay"><section className="receipt-paper"><div className="receipt-brand"><span className="logo">P</span><span><b>PERUGINE</b><small>GESTÃO IMOBILIÁRIA</small></span></div><div className="receipt-label">RECIBO DE PAGAMENTO DE ALUGUEL</div><div className="receipt-number">{payment.recibo || `REC-${new Date().getFullYear()}-${String(payment.id).padStart(6, "0")}`}</div><p>Recebemos de <b>{contract.inquilino.nome}</b> a importância de <b>{brl(amount)}</b>, referente ao aluguel do imóvel abaixo.</p><div className="receipt-details"><span>IMÓVEL<b>{contract.imovel.titulo} · {contract.imovel.endereco}, {contract.imovel.cidade}</b></span><span>CONTRATO<b>{contract.numero}</b></span><span>COMPETÊNCIA<b>{payment.referencia}</b></span><span>DATA DO PAGAMENTO<b>{receivedAt.toLocaleDateString("pt-BR")}</b></span><span>FORMA DE PAGAMENTO<b>{{ DINHEIRO: "Dinheiro", PIX: "PIX", TRANSFERENCIA: "Transferência", BOLETO: "Boleto" }[payment.formaPagamento] || "Não informada"}</b></span></div><div className="receipt-breakdown"><span>Valor da cobrança<b>{brl(amount)}</b></span><span>Valor recebido<b>{brl(amountReceived)}</b></span>{Number(payment.troco || 0) > 0 && <span>Troco<b>{brl(payment.troco)}</b></span>}<span>Comissão da imobiliária · 10%<b>{brl(amount * .1)}</b></span><span>Repasse ao proprietário · 90%<b>{brl(amount * .9)}</b></span></div><p className="receipt-owner">Proprietário: <b>{contract.proprietario.nome}</b></p><div className="receipt-signature">Perugine · Gestão Imobiliária</div><div className="receipt-buttons"><button className="secondary" onClick={onClose}>Fechar</button><button className="primary" onClick={() => window.print()}>Imprimir / Salvar em PDF</button></div></section></div>;
+  const [year, month] = payment.referencia.split("-").map(Number);
+  const competence = new Date(year, (month || 1) - 1, 1, 12).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  const amountInWords = currencyInWords(amount);
+  const city = contract.imovel.cidade || "Andirá";
+  const address = contract.imovel.endereco || "endereço não informado";
+  const documentLabel = documentText[contract.inquilino.tipoDocumento] || "Documento";
+  const tenantDocument = contract.inquilino.documento || "________________________";
+  return <div className="receipt-overlay"><section className="receipt-paper official-receipt">
+    <header className="official-receipt-heading"><h2>RECIBO</h2><b>{brl(amount)}</b></header>
+    <p>RECEBI DE <b>{contract.inquilino.nome.toLocaleUpperCase("pt-BR")}</b>, {documentLabel.toLocaleUpperCase("pt-BR")}: <b>{tenantDocument}</b>, A QUANTIA ACIMA DE <b>{amountInWords.toLocaleUpperCase("pt-BR")}</b>, REFERENTE AO ALUGUEL DO MÊS DE <b>{competence.toLocaleUpperCase("pt-BR")}</b>, DO IMÓVEL SITO A <b>{address.toLocaleUpperCase("pt-BR")}</b>, NA CIDADE DE <b>{city.toLocaleUpperCase("pt-BR")}</b>, ESTADO DO PARANÁ.</p>
+    <p className="official-receipt-truth">POR SER VERDADE,</p>
+    <p className="official-receipt-signoff">FIRMO O PRESENTE,</p>
+    <p className="official-receipt-place">{city.toLocaleUpperCase("pt-BR")}, {receivedAt.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" }).toLocaleUpperCase("pt-BR")}</p>
+    <footer className="official-receipt-footer"><div className="official-receipt-signature"></div><div className="official-receipt-stamp"><b>PERUGINE - CORRETORA DE IMÓVEIS</b><b>CRECI-PR Nº 13.239 · CPF: 239.746.569-87</b><b>RUA BANDEIRANTES, 146</b><b>FONE: (43) 3538-2072 / 99624-8484</b><b>ANDIRÁ · PARANÁ · CEP 86.380-000</b></div></footer>
+    <div className="receipt-buttons"><button className="secondary" onClick={onClose}>Fechar</button><button className="primary" onClick={() => window.print()}>Imprimir / Salvar em PDF</button></div>
+  </section></div>;
+}
+
+function currencyInWords(value) {
+  const units = ["zero", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove"];
+  const teens = ["dez", "onze", "doze", "treze", "quatorze", "quinze", "dezesseis", "dezessete", "dezoito", "dezenove"];
+  const tens = ["", "", "vinte", "trinta", "quarenta", "cinquenta", "sessenta", "setenta", "oitenta", "noventa"];
+  const hundreds = ["", "cento", "duzentos", "trezentos", "quatrocentos", "quinhentos", "seiscentos", "setecentos", "oitocentos", "novecentos"];
+  const underThousand = n => {
+    if (!n) return "";
+    if (n === 100) return "cem";
+    const parts = [];
+    if (n >= 100) { parts.push(hundreds[Math.floor(n / 100)]); n %= 100; }
+    if (n >= 10 && n < 20) parts.push(teens[n - 10]);
+    else {
+      if (n >= 20) { parts.push(tens[Math.floor(n / 10)]); n %= 10; }
+      if (n > 0) parts.push(units[n]);
+    }
+    return parts.join(" e ");
+  };
+  const whole = Math.floor(Math.max(0, Number(value) || 0));
+  const cents = Math.round((Math.max(0, Number(value) || 0) - whole) * 100);
+  const groups = [];
+  let remainder = whole;
+  const millions = Math.floor(remainder / 1_000_000); remainder %= 1_000_000;
+  const thousands = Math.floor(remainder / 1000); remainder %= 1000;
+  if (millions) groups.push(`${underThousand(millions)} ${millions === 1 ? "milhão" : "milhões"}`);
+  if (thousands) groups.push(thousands === 1 ? "mil" : `${underThousand(thousands)} mil`);
+  if (remainder) groups.push(underThousand(remainder));
+  let result = `${groups.join(" e ") || "zero"} ${whole === 1 ? "real" : "reais"}`;
+  if (cents) result += ` e ${underThousand(cents)} ${cents === 1 ? "centavo" : "centavos"}`;
+  return result;
 }
 
 function Modal({ title, close, children, wide }) { return <div className="overlay" onMouseDown={close}><section className={`modal ${wide ? "modal-wide" : ""}`} onMouseDown={e => e.stopPropagation()}><div className="modal-title"><div><span className="eyebrow">PERUGINE · GESTÃO</span><h2>{title}</h2></div><button aria-label="Fechar" onClick={close}>×</button></div>{children}</section></div>; }
