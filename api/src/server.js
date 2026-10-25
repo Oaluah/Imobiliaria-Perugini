@@ -31,6 +31,53 @@ const uploadPhotos = uploader({ photos: true });
 const uploadDocuments = uploader();
 const publicClientAttachment = { id: true, categoria: true, nomeOriginal: true, mimeType: true, criadoEm: true };
 const publicPropertyPhoto = { id: true, nomeOriginal: true, mimeType: true, posicao: true, criadoEm: true };
+const rentalIndices = { IPCA: 433, "IGP-M": 189 };
+const roundMoney = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+const sgsDate = date => `${String(date.getUTCDate()).padStart(2, "0")}/${String(date.getUTCMonth() + 1).padStart(2, "0")}/${date.getUTCFullYear()}`;
+function rentForReference(contract, reference) {
+  let rent = Number(contract.valorAluguel);
+  for (const adjustment of contract.aditamentos || []) {
+    const effectiveReference = `${adjustment.aplicadoEm.getUTCFullYear()}-${String(adjustment.aplicadoEm.getUTCMonth() + 1).padStart(2, "0")}`;
+    if (reference < effectiveReference) rent = Number(adjustment.valorAnterior);
+  }
+  return rent;
+}
+
+async function calculateRentalAdjustment(contract, indice) {
+  const series = rentalIndices[indice];
+  if (!series) return { error: "Selecione IPCA ou IGP-M.", status: 400 };
+  if (contract.fim && new Date() > contract.fim) return { error: "O contrato já passou da data de término e não pode receber novo reajuste.", status: 409 };
+  const anchor = contract.aditamentos?.[0]?.aplicadoEm || contract.inicio;
+  const nextDate = new Date(Date.UTC(anchor.getUTCFullYear() + 1, anchor.getUTCMonth(), Math.min(anchor.getUTCDate(), new Date(Date.UTC(anchor.getUTCFullYear() + 1, anchor.getUTCMonth() + 1, 0)).getUTCDate()), 12));
+  if (new Date() < nextDate) return { eligible: false, nextDate, valorAtual: Number(contract.valorAluguel), indice };
+  const start = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), 1, 12));
+  const end = new Date(Date.UTC(nextDate.getUTCFullYear(), nextDate.getUTCMonth(), 0, 12));
+  const months = [];
+  for (let cursor = new Date(start); cursor <= end; cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1, 12))) months.push(`${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, "0")}`);
+  if (months.length !== 12) return { error: "Não foi possível determinar os 12 meses do período de reajuste.", status: 422 };
+  const url = new URL(`https://api.bcb.gov.br/dados/serie/bcdata.sgs.${series}/dados`);
+  url.searchParams.set("formato", "json"); url.searchParams.set("dataInicial", sgsDate(start)); url.searchParams.set("dataFinal", sgsDate(end));
+  let data;
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(9000), headers: { Accept: "application/json" } });
+    if (!response.ok) return { error: "O Banco Central não respondeu à consulta do índice. Tente novamente mais tarde.", status: 502 };
+    data = await response.json();
+  } catch { return { error: "Não foi possível consultar os índices no Banco Central. Confira a conexão e tente novamente.", status: 502 }; }
+  if (!Array.isArray(data)) return { error: "A fonte do índice retornou dados em formato inesperado.", status: 502 };
+  const rates = new Map(data.map(item => {
+    const [day, month, year] = String(item.data || "").split("/").map(Number);
+    const value = Number(String(item.valor || "").replace(",", "."));
+    return [`${year}-${String(month).padStart(2, "0")}`, value];
+  }).filter(([reference, value]) => /^\d{4}-\d{2}$/.test(reference) && Number.isFinite(value)));
+  const missing = months.filter(month => !rates.has(month));
+  if (missing.length) return { error: `O índice ${indice} ainda não tem os 12 meses publicados para este aniversário. Meses pendentes: ${missing.join(", ")}.`, status: 422 };
+  const accumulated = months.reduce((factor, month) => factor * (1 + rates.get(month) / 100), 1) - 1;
+  const percentual = accumulated * 100;
+  const valorAtual = Number(contract.valorAluguel);
+  const valorNovo = roundMoney(valorAtual * (1 + accumulated));
+  if (!Number.isFinite(valorNovo) || valorNovo <= 0) return { error: "O índice calculado não produz um aluguel válido.", status: 422 };
+  return { eligible: true, indice, percentual, valorAtual, valorNovo, periodoInicio: start, periodoFim: end, meses: months.map(mes => ({ referencia: mes, variacao: rates.get(mes) })), proximoAniversario: nextDate };
+}
 
 app.get("/api/health", async (_req, res) => {
   try { await prisma.$queryRaw`SELECT 1`; res.json({ ok: true, service: "perugine-api" }); }
@@ -137,7 +184,7 @@ app.get("/api/financeiro", async (_req, res, next) => {
         imovel: { select: { id: true, codigo: true, titulo: true, endereco: true, cidade: true } },
         inquilino: { select: { id: true, nome: true } },
         proprietario: { select: { id: true, nome: true } },
-        pagamentos: { orderBy: { vencimento: "asc" }, select: { id: true, referencia: true, vencimento: true, pagoEm: true, valor: true, status: true, recibo: true } },
+        pagamentos: { orderBy: { vencimento: "asc" }, select: { id: true, referencia: true, vencimento: true, pagoEm: true, valor: true, status: true, recibo: true, formaPagamento: true, valorRecebido: true, troco: true } },
         aditamentos: { orderBy: { aplicadoEm: "desc" } }
       },
       orderBy: { criadoEm: "desc" }
@@ -175,24 +222,38 @@ app.post("/api/contratos", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+app.get("/api/contratos/:id/reajustes/previa", async (req, res, next) => {
+  try {
+    const contratoId = Number(req.params.id);
+    const indice = String(req.query.indice || "").trim().toUpperCase();
+    const contrato = await prisma.contrato.findFirst({ where: { id: contratoId, ativo: true }, include: { aditamentos: { orderBy: { aplicadoEm: "desc" }, take: 1 } } });
+    if (!contrato) return res.status(404).json({ error: "Contrato ativo não encontrado." });
+    const preview = await calculateRentalAdjustment(contrato, indice);
+    if (preview.error) return res.status(preview.status).json({ error: preview.error });
+    res.json(preview);
+  } catch (error) { next(error); }
+});
+
 app.post("/api/contratos/:id/reajustes", async (req, res, next) => {
   try {
     const contratoId = Number(req.params.id);
     const indice = String(req.body.indice || "").trim().toUpperCase();
-    const percentual = Number(req.body.percentual);
-    if (!["IPCA", "IGP-M"].includes(indice) || !Number.isFinite(percentual) || percentual < -100 || percentual > 1000)
-      return res.status(400).json({ error: "Informe o índice IPCA ou IGP-M e um percentual válido." });
-    const contrato = await prisma.contrato.findFirst({ where: { id: contratoId, ativo: true } });
+    const contrato = await prisma.contrato.findFirst({ where: { id: contratoId, ativo: true }, include: { aditamentos: { orderBy: { aplicadoEm: "desc" }, take: 1 } } });
     if (!contrato) return res.status(404).json({ error: "Contrato ativo não encontrado." });
+    const preview = await calculateRentalAdjustment(contrato, indice);
+    if (preview.error) return res.status(preview.status).json({ error: preview.error });
+    if (!preview.eligible) return res.status(409).json({ error: `O próximo reajuste só poderá ser aplicado em ${preview.nextDate.toLocaleDateString("pt-BR")}.` });
     const anterior = Number(contrato.valorAluguel);
-    const novo = Math.round(anterior * (1 + percentual / 100) * 100) / 100;
-    if (!Number.isFinite(novo) || novo <= 0) return res.status(400).json({ error: "O reajuste precisa manter o aluguel acima de zero." });
+    const novo = preview.valorNovo;
     const saved = await prisma.$transaction(async tx => {
-      const aditamento = await tx.aditamento.create({ data: { contratoId, valorAnterior: anterior.toFixed(2), valorNovo: novo.toFixed(2), indice: `${indice} ${percentual >= 0 ? "+" : ""}${percentual}%` } });
+      const latest = await tx.contrato.findFirst({ where: { id: contratoId, ativo: true }, include: { aditamentos: { orderBy: { aplicadoEm: "desc" }, take: 1 } } });
+      if (!latest || Number(latest.valorAluguel) !== anterior || latest.aditamentos?.[0]?.id !== contrato.aditamentos?.[0]?.id) return null;
+      const aditamento = await tx.aditamento.create({ data: { contratoId, valorAnterior: anterior.toFixed(2), valorNovo: novo.toFixed(2), indice, percentual: preview.percentual.toFixed(4), periodoInicio: preview.periodoInicio, periodoFim: preview.periodoFim } });
       await tx.contrato.update({ where: { id: contratoId }, data: { valorAluguel: novo.toFixed(2) } });
       return aditamento;
     });
-    res.status(201).json({ aditamento: saved, valorAnterior: anterior, valorNovo: novo });
+    if (!saved) return res.status(409).json({ error: "Este contrato foi alterado por outra pessoa. Atualize a tela e consulte o índice novamente." });
+    res.status(201).json({ aditamento: saved, valorAnterior: anterior, valorNovo: novo, indice, percentual: preview.percentual, periodoInicio: preview.periodoInicio, periodoFim: preview.periodoFim });
   } catch (error) { next(error); }
 });
 
@@ -223,14 +284,14 @@ app.post("/api/financeiro/:contratoId/pagamentos", async (req, res, next) => {
     if (!/^\d{4}-\d{2}$/.test(referencia)) return res.status(400).json({ error: "Informe a competência no formato AAAA-MM." });
     const [year, month] = referencia.split("-").map(Number);
     if (month < 1 || month > 12) return res.status(400).json({ error: "Mês da competência inválido." });
-    const contract = await prisma.contrato.findFirst({ where: { id: contractId, ativo: true } });
+    const contract = await prisma.contrato.findFirst({ where: { id: contractId, ativo: true }, include: { aditamentos: { orderBy: { aplicadoEm: "desc" } } } });
     if (!contract) return res.status(404).json({ error: "Contrato ativo não encontrado." });
     const firstReference = contract.inicio.toISOString().slice(0, 7);
     const lastReference = contract.fim.toISOString().slice(0, 7);
     if (referencia < firstReference || referencia > lastReference) return res.status(400).json({ error: "A competência informada está fora do período do contrato." });
     const day = Math.min(contract.diaVencimento, new Date(year, month, 0).getDate());
     const vencimento = new Date(year, month - 1, day, 12);
-    const payment = await prisma.pagamento.create({ data: { contratoId: contractId, referencia, vencimento, valor: contract.valorAluguel, status: "PENDENTE" } });
+    const payment = await prisma.pagamento.create({ data: { contratoId: contractId, referencia, vencimento, valor: rentForReference(contract, referencia), status: "PENDENTE" } });
     res.status(201).json(payment);
   } catch (error) { next(error); }
 });
@@ -241,8 +302,18 @@ app.patch("/api/financeiro/pagamentos/:id", async (req, res, next) => {
     if (!["PENDENTE", "PAGO", "ATRASADO"].includes(status)) return res.status(400).json({ error: "Situação do pagamento inválida." });
     const current = await prisma.pagamento.findUnique({ where: { id: Number(req.params.id) } });
     if (!current) return res.status(404).json({ error: "Pagamento não encontrado." });
-    const recibo = status === "PAGO" ? current.recibo || `REC-${new Date().getFullYear()}-${randomUUID().slice(0, 8).toUpperCase()}` : current.recibo;
-    const payment = await prisma.pagamento.update({ where: { id: current.id }, data: { status, pagoEm: status === "PAGO" ? current.pagoEm || new Date() : null, recibo } });
+    let receiptData = { formaPagamento: null, valorRecebido: null, troco: null };
+    if (status === "PAGO") {
+      const formaPagamento = String(req.body.formaPagamento || "").toUpperCase();
+      const allowedMethods = ["DINHEIRO", "PIX", "TRANSFERENCIA", "BOLETO"];
+      const valorRecebido = Number(req.body.valorRecebido);
+      const valor = Number(current.valor);
+      if (!allowedMethods.includes(formaPagamento) || !Number.isFinite(valorRecebido) || valorRecebido <= 0) return res.status(400).json({ error: "Informe a forma de pagamento e o valor recebido." });
+      if (formaPagamento === "DINHEIRO" ? valorRecebido < valor : Math.abs(valorRecebido - valor) > 0.01) return res.status(400).json({ error: formaPagamento === "DINHEIRO" ? "O valor recebido em dinheiro precisa cobrir a cobrança." : "O valor recebido precisa corresponder ao valor da cobrança." });
+      receiptData = { formaPagamento, valorRecebido: valorRecebido.toFixed(2), troco: roundMoney(Math.max(0, valorRecebido - valor)).toFixed(2) };
+    }
+    const recibo = status === "PAGO" ? current.recibo || `REC-${new Date().getFullYear()}-${randomUUID().slice(0, 8).toUpperCase()}` : null;
+    const payment = await prisma.pagamento.update({ where: { id: current.id }, data: { status, pagoEm: status === "PAGO" ? current.pagoEm || new Date() : null, recibo, ...receiptData } });
     res.json(payment);
   } catch (error) { next(error); }
 });
@@ -290,8 +361,16 @@ app.delete("/api/clientes/:clienteId/documentos/:id", async (req, res, next) => 
   } catch (error) { next(error); }
 });
 
-app.get("/api/imoveis", async (_req, res, next) => {
-  try { res.json(await prisma.imovel.findMany({ include: { fotos: { select: publicPropertyPhoto, orderBy: { posicao: "asc" } } }, orderBy: { criadoEm: "desc" } })); }
+app.get("/api/imoveis", async (req, res, next) => {
+  try {
+    const homes = await prisma.imovel.findMany({ include: {
+      fotos: { select: publicPropertyPhoto, orderBy: { posicao: "asc" } },
+      chaves: { orderBy: { criadoEm: "asc" } },
+      interesses: hasPermission(req.usuario, "clients.view") ? { include: { cliente: { select: { id: true, nome: true, tipo: true, telefone: true, email: true } } }, orderBy: [{ prioridade: "desc" }, { criadoEm: "asc" }] } : false,
+      contratos: { where: { ativo: true }, select: { id: true, numero: true, inicio: true, fim: true, valorAluguel: true, inquilino: { select: { id: true, nome: true } }, proprietario: { select: { id: true, nome: true } } } }
+    }, orderBy: { criadoEm: "desc" } });
+    res.json(homes.map(({ interesses, ...home }) => ({ ...home, ...(interesses ? { interessados: interesses } : {}) })));
+  }
   catch (error) { next(error); }
 });
 app.post("/api/imoveis", async (req, res, next) => {
@@ -320,6 +399,71 @@ app.delete("/api/imoveis/:id", async (req, res, next) => {
     const photos = await prisma.fotoImovel.findMany({ where: { imovelId }, select: { arquivo: true } });
     await prisma.imovel.delete({ where: { id: imovelId } });
     await Promise.all(photos.map(photo => removeStored(photo.arquivo)));
+    res.status(204).end();
+  } catch (error) { next(error); }
+});
+app.post("/api/imoveis/:id/chaves", async (req, res, next) => {
+  try {
+    const imovelId = Number(req.params.id);
+    const numero = String(req.body.numero || "").trim();
+    const localizacao = String(req.body.localizacao || "").trim();
+    if (!Number.isInteger(imovelId) || imovelId < 1 || !numero || numero.length > 40) return res.status(400).json({ error: "Informe uma identificação curta para a chave." });
+    const key = await prisma.chaveImovel.create({ data: { imovelId, numero, localizacao: localizacao || null } });
+    res.status(201).json(key);
+  } catch (error) { next(error); }
+});
+app.patch("/api/imoveis/:imovelId/chaves/:id", async (req, res, next) => {
+  try {
+    const imovelId = Number(req.params.imovelId);
+    const id = Number(req.params.id);
+    const acao = String(req.body.acao || "").toUpperCase();
+    const atual = await prisma.chaveImovel.findFirst({ where: { id, imovelId } });
+    if (!atual) return res.status(404).json({ error: "Chave não encontrada para este imóvel." });
+    if (acao === "RETIRAR") {
+      const retiradaPor = String(req.body.retiradaPor || "").trim();
+      if (atual.status === "RETIRADA") return res.status(409).json({ error: "Esta chave já está retirada." });
+      if (!retiradaPor) return res.status(400).json({ error: "Informe quem retirou a chave." });
+      return res.json(await prisma.chaveImovel.update({ where: { id }, data: { status: "RETIRADA", retiradaPor, retiradaEm: new Date(), devolvidaEm: null } }));
+    }
+    if (acao === "DEVOLVER") {
+      if (atual.status !== "RETIRADA") return res.status(409).json({ error: "Esta chave não está marcada como retirada." });
+      return res.json(await prisma.chaveImovel.update({ where: { id }, data: { status: "DISPONIVEL", devolvidaEm: new Date() } }));
+    }
+    return res.status(400).json({ error: "Ação de chave inválida." });
+  } catch (error) { next(error); }
+});
+app.post("/api/imoveis/:id/interessados", async (req, res, next) => {
+  try {
+    const imovelId = Number(req.params.id);
+    const clienteId = Number(req.body.clienteId);
+    const prioridade = Number(req.body.prioridade ?? 0);
+    const observacoes = String(req.body.observacoes || "").trim();
+    if (!Number.isInteger(imovelId) || !Number.isInteger(clienteId) || !Number.isInteger(prioridade) || prioridade < 0 || prioridade > 5) return res.status(400).json({ error: "Selecione um interessado e uma prioridade entre 0 e 5." });
+    const [imovel, cliente] = await Promise.all([
+      prisma.imovel.findUnique({ where: { id: imovelId }, select: { id: true } }),
+      prisma.cliente.findFirst({ where: { id: clienteId, ativo: true, tipo: "INTERESSADO" }, select: { id: true } })
+    ]);
+    if (!imovel || !cliente) return res.status(400).json({ error: "O imóvel ou o cliente interessado não está disponível." });
+    const interest = await prisma.interesseImovel.upsert({ where: { imovelId_clienteId: { imovelId, clienteId } }, create: { imovelId, clienteId, prioridade, observacoes: observacoes || null }, update: { prioridade, observacoes: observacoes || null } });
+    res.status(201).json(interest);
+  } catch (error) { next(error); }
+});
+app.patch("/api/imoveis/:imovelId/interessados/:id", async (req, res, next) => {
+  try {
+    const imovelId = Number(req.params.imovelId);
+    const id = Number(req.params.id);
+    const prioridade = Number(req.body.prioridade);
+    if (!Number.isInteger(prioridade) || prioridade < 0 || prioridade > 5) return res.status(400).json({ error: "A prioridade deve ficar entre 0 e 5." });
+    const current = await prisma.interesseImovel.findFirst({ where: { id, imovelId } });
+    if (!current) return res.status(404).json({ error: "Interesse não encontrado para este imóvel." });
+    res.json(await prisma.interesseImovel.update({ where: { id }, data: { prioridade } }));
+  } catch (error) { next(error); }
+});
+app.delete("/api/imoveis/:imovelId/interessados/:id", async (req, res, next) => {
+  try {
+    const current = await prisma.interesseImovel.findFirst({ where: { id: Number(req.params.id), imovelId: Number(req.params.imovelId) } });
+    if (!current) return res.status(404).json({ error: "Interesse não encontrado para este imóvel." });
+    await prisma.interesseImovel.delete({ where: { id: current.id } });
     res.status(204).end();
   } catch (error) { next(error); }
 });
