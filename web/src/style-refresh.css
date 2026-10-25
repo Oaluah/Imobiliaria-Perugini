@@ -667,3 +667,80 @@ header { height: 72px; padding: 0 48px; background: #fff; border-color: var(--bo
   .visit-actions { grid-column: 3; grid-row: 3; gap: 6px; }
   .visit-actions button { min-height: 40px; padding: 0 10px; font-size: 11px; }
 }
+
+/* Agenda: resumo compacto e cartões de atendimento com hierarquia mais clara. */
+.agenda-overview { display: grid; grid-template-columns: 48px minmax(240px,1fr) auto; align-items: center; gap: 18px; min-height: 116px; margin: 0 0 30px; padding: 22px 26px; border: 0; border-radius: 16px; background: linear-gradient(115deg,#173f31,#24563f); box-shadow: 0 12px 28px #173f311c; }
+.agenda-overview-icon { width: 46px; height: 46px; border: 1px solid #ffffff25; border-radius: 13px; background: #ffffff12; color: #e0ebdf; font-size: 23px; }
+.agenda-overview-copy .eyebrow { color: #b9d0bb; }
+.agenda-overview-copy h2 { margin: 5px 0 4px; color: #fff; font: 700 20px Manrope,sans-serif; }
+.agenda-overview-copy p { max-width: 480px; color: #d1dfd2; font-size: 12px; line-height: 1.5; }
+.agenda-overview-metrics { display: flex; align-items: stretch; gap: 9px; }
+.agenda-overview-metrics > div { display: grid; align-content: center; gap: 4px; min-width: 92px; padding: 12px 15px; border: 1px solid #ffffff20; border-radius: 11px; background: #ffffff0c; }
+.agenda-overview-metrics b { color: #fff; font: 700 20px Manrope,sans-serif; }
+.agenda-overview-metrics span { color: #c8d8ca; font-size: 10px; }
+.agenda-schedule { align-items: end; margin: 0 0 14px; padding-bottom: 14px; border-bottom: 1px solid #e3e9e1; }
+.agenda-schedule h2 { margin: 4px 0 3px; color: #26372d; font: 700 19px Manrope,sans-serif; }
+.agenda-schedule p { color: #788478; font-size: 11px; }
+.agenda-schedule .eyebrow { color: #628169; }
+.agenda-schedule .filter-wrap { display: flex; align-items: center; gap: 10px; color: #687568; font-size: 11px; }
+.agenda-schedule .filter-select { min-width: 150px; }
+.visit-list { gap: 9px; }
+.visit-card { position: relative; grid-template-columns: 58px 76px minmax(0,1fr) auto; grid-template-rows: auto auto; column-gap: 17px; row-gap: 8px; min-height: 116px; padding: 17px 18px; overflow: hidden; border: 1px solid #e4eae2; border-left: 3px solid #6c9472; border-radius: 13px; box-shadow: 0 3px 12px #193d2908; transition: transform .16s ease,box-shadow .16s ease,border-color .16s ease; }
+.visit-card:hover { transform: translateY(-1px); border-color: #d2dfd1; box-shadow: 0 8px 22px #193d2910; }
+.visit-date { grid-column: 1; grid-row: 1 / 3; width: 54px; height: 66px; gap: 1px; border: 1px solid #dbe8da; border-radius: 10px; background: #f0f5ee; color: #3d6849; }
+.visit-date small { color: #7b8d7c; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+.visit-date b { font: 700 22px Manrope,sans-serif; }
+.visit-date span { color: #54765b; font-size: 9px; font-weight: 700; }
+.visit-time { grid-column: 2; grid-row: 1 / 3; display: grid; align-content: center; gap: 5px; color: #354b3a; }
+.visit-time small { color: #8a9789; font-size: 8px; font-weight: 700; letter-spacing: .9px; }
+.visit-time b { font: 700 17px Manrope,sans-serif; }
+.visit-main { grid-column: 3; grid-row: 1 / 3; align-self: center; }
+.visit-main > b { color: #2c3d32; font: 700 15px Manrope,sans-serif; }
+.visit-main > span { margin-top: 4px; color: #748075; font-size: 11px; }
+.visit-meta { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 9px; }
+.visit-meta > span { display: grid; gap: 2px; color: #465849; font-size: 10px; font-weight: 600; }
+.visit-meta small { color: #929b91; font-size: 8px; font-weight: 700; letter-spacing: .7px; }
+.visit-main > small.visit-note { margin-top: 7px; color: #737d73; font-size: 10px; white-space: normal; }
+.visit-status { grid-column: 4; grid-row: 1; justify-self: end; align-self: start; padding: 6px 10px; font-size: 9px; }
+.visit-actions { grid-column: 4; grid-row: 2; align-self: end; gap: 6px; }
+.visit-actions button { min-height: 35px; padding: 0 11px; border-radius: 7px; font-size: 10px; }
+.inspection-panel { margin-top: 30px; padding: 23px 25px; border-color: #e3e9e1; border-radius: 15px; box-shadow: 0 5px 18px #253b2a06; }
+.inspection-heading h2 { font-size: 17px; }
+.inspection-list article { padding: 17px 4px; }
+.inspection-type { min-width: 94px; padding: 7px 10px; }
+@media(max-width:1050px) {
+  .agenda-overview { grid-template-columns: 46px minmax(180px,1fr); }
+  .agenda-overview-metrics { grid-column: 1/-1; margin-left: 64px; }
+  .agenda-overview-metrics > div { flex: 1; }
+  .visit-card { grid-template-columns: 52px 68px minmax(0,1fr) auto; gap: 12px; }
+  .visit-actions { grid-column: 4; }
+}
+@media(max-width:760px) {
+  .agenda-overview { grid-template-columns: 42px minmax(0,1fr); gap: 12px; margin-bottom: 23px; padding: 17px; }
+  .agenda-overview-icon { width: 40px; height: 40px; }
+  .agenda-overview-copy h2 { font-size: 17px; }
+  .agenda-overview-copy p { font-size: 10px; }
+  .agenda-overview-metrics { gap: 6px; margin: 2px 0 0; }
+  .agenda-overview-metrics > div { min-width: 0; padding: 9px 10px; }
+  .agenda-overview-metrics b { font-size: 17px; }
+  .agenda-overview-metrics span { font-size: 9px; }
+  .agenda-schedule { align-items: stretch; flex-direction: column; gap: 12px; }
+  .agenda-schedule .filter-wrap { justify-content: space-between; }
+  .agenda-schedule .filter-select { flex: 1; }
+  .visit-card { grid-template-columns: 48px 1fr auto; grid-template-rows: auto auto auto; align-items: start; gap: 8px 11px; padding: 13px; }
+  .visit-date { grid-column: 1; grid-row: 1 / 3; width: 46px; height: 60px; }
+  .visit-time { grid-column: 1; grid-row: 3; display: flex; align-items: baseline; gap: 5px; white-space: nowrap; }
+  .visit-time small { font-size: 7px; }
+  .visit-time b { font-size: 12px; }
+  .visit-main { grid-column: 2 / 4; grid-row: 1 / 3; }
+  .visit-main > b { font-size: 13px; }
+  .visit-main > span { white-space: normal; font-size: 10px; }
+  .visit-meta { gap: 10px; }
+  .visit-meta > span { font-size: 9px; }
+  .visit-status { grid-column: 2; grid-row: 3; justify-self: start; align-self: center; }
+  .visit-actions { grid-column: 3; grid-row: 3; justify-content: end; }
+  .visit-actions button { min-height: 34px; padding: 0 8px; font-size: 9px; }
+  .inspection-panel { padding: 17px; }
+  .inspection-form { grid-template-columns: 1fr; }
+  .inspection-description { grid-column: 1; }
+}
