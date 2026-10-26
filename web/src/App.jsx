@@ -14,11 +14,31 @@ const landingPage = user => can(user, "dashboard.view") ? "inicio" : can(user, "
 const pagePermission = { inicio: "dashboard.view", imoveis: "properties.view", clientes: "clients.view", agenda: "visits.view", financeiro: "finance.view", usuarios: "users.manage" };
 const canOpenPage = (user, page) => page === "documentos" ? can(user, "clients.view") || can(user, "properties.view") : can(user, pagePermission[page]);
 const screenGroups = [
-  { id: "inicio", icon: "◫", label: "Visão geral", pages: ["inicio"] },
-  { id: "cadastros", icon: "⌂", label: "Cadastros", pages: ["imoveis", "clientes", "documentos"] },
-  { id: "financeiro", icon: "R$", label: "Contratos e caixa", pages: ["financeiro"] },
-  { id: "operacao", icon: "▦", label: "Agenda e equipe", pages: ["agenda", "usuarios"] }
+  { id: "painel", label: "Painel", pages: [{ id: "inicio", label: "Visão geral", icon: "overview" }] },
+  { id: "carteira", label: "Carteira", pages: [
+    { id: "imoveis", label: "Imóveis", icon: "property" },
+    { id: "clientes", label: "Pessoas", icon: "people" },
+    { id: "documentos", label: "Documentos", icon: "documents" }
+  ] },
+  { id: "operacao", label: "Operação", pages: [
+    { id: "agenda", label: "Agenda", icon: "calendar" },
+    { id: "financeiro", label: "Financeiro", icon: "finance" }
+  ] },
+  { id: "administracao", label: "Administração", pages: [{ id: "usuarios", label: "Equipe e acessos", icon: "team" }] }
 ];
+const navigationIcons = {
+  overview: <><rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/><rect x="3.5" y="13.5" width="7" height="7" rx="1"/><rect x="13.5" y="13.5" width="7" height="7" rx="1"/></>,
+  property: <><path d="m3 10 9-7 9 7"/><path d="M5.5 9v11h13V9M9 20v-6h6v6"/></>,
+  people: <><circle cx="9" cy="8" r="3.5"/><path d="M2.8 20v-1.6a6.2 6.2 0 0 1 12.4 0V20M16 5a3.3 3.3 0 0 1 0 6.4M17.2 14.1a5.5 5.5 0 0 1 4 5.3v.6"/></>,
+  documents: <><path d="M6 3.5h8l4 4V20H6z"/><path d="M14 3.5V8h4M9 12h6M9 16h6"/></>,
+  calendar: <><rect x="3.5" y="5" width="17" height="16" rx="2"/><path d="M7.5 3v4M16.5 3v4M3.5 9.5h17M8 13h2M13 13h2M8 17h2"/></>,
+  finance: <><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 9h18M7 15h4M16 3v4"/></>,
+  team: <><circle cx="9" cy="8" r="3.5"/><path d="M2.8 20v-1.6a6.2 6.2 0 0 1 12.4 0V20M17 8h4M19 6v4M17 15h4"/></>
+};
+
+function NavigationIcon({ name }) {
+  return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">{navigationIcons[name]}</svg>;
+}
 
 function ProtectedImage({ path, alt, className }) {
   const [source, setSource] = useState("");
@@ -72,6 +92,8 @@ export default function App() {
   const [inspections, setInspections] = useState([]);
   const [payments, setPayments] = useState([]);
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState("error");
+  const notify = (text, tone = "error") => { setMessageTone(tone); setMessage(text); };
   const [confirmAction, setConfirmAction] = useState(null);
   const [confirmError, setConfirmError] = useState("");
   const [confirmBusy, setConfirmBusy] = useState(false);
@@ -105,7 +127,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const showNotice = event => setMessage(event.detail || "Não foi possível concluir a ação.");
+    const showNotice = event => notify(event.detail || "Não foi possível concluir a ação.");
     window.addEventListener("perugine:notice", showNotice);
     return () => window.removeEventListener("perugine:notice", showNotice);
   }, []);
@@ -127,17 +149,18 @@ export default function App() {
           sessionStorage.removeItem("perugineToken");
           setCurrentUser(null);
           setAuthMode("login");
-          setMessage("Sua sessão expirou. Entre novamente para carregar os dados.");
-          return;
+          notify("Sua sessão expirou. Entre novamente para carregar os dados.");
+          return false;
         }
         const details = await response.json().catch(() => ({}));
-        setMessage(response.status === 403
+        notify(response.status === 403
           ? `Sua conta não tem permissão para carregar ${area}. Peça ao administrador para revisar os acessos.`
           : `Falha ao carregar ${area} (HTTP ${response.status}). ${details.error || "Atualize a tela; se persistir, informe esta mensagem."}`);
-        return;
+        return false;
       }
       setClients(c ? await c.json() : []); setHomes(h ? await h.json() : []); setVisits(v ? await v.json() : []); setPayments(f ? await f.json() : []); setInspections(i ? await i.json() : []); setMessage("");
-    } catch { setMessage("Não foi possível alcançar a API. Confira se ela está em execução e atualize a tela."); }
+      return true;
+    } catch { notify("Não foi possível alcançar a API. Confira se ela está em execução e atualize a tela."); return false; }
   };
   useEffect(() => { if (currentUser) refresh(); }, [currentUser]);
 
@@ -166,7 +189,9 @@ export default function App() {
           if (!upload.ok) throw new Error(result.error || "Cadastro salvo, mas não foi possível enviar todos os arquivos.");
         }
       }
-      setDialog(""); setEditing(null); await refresh();
+      const wasEditing = Boolean(editing && kind !== "visita");
+      setDialog(""); setEditing(null);
+      if (await refresh()) notify(`${kind === "cliente" ? "Pessoa" : kind === "imovel" ? "Imóvel" : "Visita"} ${wasEditing ? "atualizada" : "cadastrada"} com sucesso.`, "success");
     } finally { setBusy(false); }
   };
 
@@ -195,39 +220,39 @@ export default function App() {
 
   const updateVisit = async (id, status) => {
     const response = await apiFetch(`${API}/visitas/${id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
-    if (!response.ok) { setMessage("Não foi possível atualizar a visita."); return; }
+    if (!response.ok) { notify("Não foi possível atualizar a visita."); return; }
     await refresh();
   };
 
   const createContract = async data => {
     const response = await apiFetch(`${API}/contratos`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
     const result = await response.json();
-    if (!response.ok) { setMessage(result.error || "Não foi possível cadastrar a locação."); return false; }
-    setMessage("Locação cadastrada. A comissão e o repasse já aparecem na ficha financeira."); await refresh(); return true;
+    if (!response.ok) return { error: result.error || "Não foi possível cadastrar a locação." };
+    if (await refresh()) notify("Locação cadastrada. A comissão e o repasse já aparecem na ficha financeira.", "success"); return true;
   };
   const createPayment = async (contractId, referencia) => {
     const response = await apiFetch(`${API}/financeiro/${contractId}/pagamentos`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ referencia }) });
     const result = await response.json();
-    if (!response.ok) { setMessage(result.error || "Não foi possível lançar a cobrança."); return false; }
-    await refresh(); return true;
+    if (!response.ok) { notify(result.error || "Não foi possível lançar a cobrança."); return false; }
+    if (await refresh()) notify("Cobrança lançada no financeiro.", "success"); return true;
   };
   const setPaymentStatus = async (id, status, details = {}) => {
     const response = await apiFetch(`${API}/financeiro/pagamentos/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status, ...details }) });
     const result = await response.json();
-    if (!response.ok) { const error = result.error || "Não foi possível atualizar o pagamento."; setMessage(error); return { error }; }
-    await refresh(); return result;
+    if (!response.ok) return { error: result.error || "Não foi possível atualizar o pagamento." };
+    if (await refresh()) notify("Recebimento registrado.", "success"); return result;
   };
   const applyAdjustment = async (id, data) => {
     const response = await apiFetch(`${API}/contratos/${id}/reajustes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
     const result = await response.json();
-    if (!response.ok) { setMessage(result.error || "Não foi possível registrar o reajuste."); return false; }
-    setMessage(`Reajuste registrado. O novo aluguel é ${brl(result.valorNovo)}.`); await refresh(); return true;
+    if (!response.ok) return { error: result.error || "Não foi possível registrar o reajuste." };
+    if (await refresh()) notify(`Reajuste registrado. O novo aluguel é ${brl(result.valorNovo)}.`, "success"); return true;
   };
   const createInspection = async data => {
     const response = await apiFetch(`${API}/vistorias`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
     const result = await response.json();
-    if (!response.ok) { setMessage(result.error || "Não foi possível registrar a vistoria."); return false; }
-    await refresh(); return true;
+    if (!response.ok) return { error: result.error || "Não foi possível registrar a vistoria." };
+    if (await refresh()) notify("Vistoria registrada.", "success"); return true;
   };
   const mutateHome = async (homeId, path, method, data) => {
     const response = await apiFetch(`${API}/imoveis/${homeId}${path}`, { method, headers: data ? { "Content-Type": "application/json" } : undefined, body: data ? JSON.stringify(data) : undefined });
@@ -245,8 +270,7 @@ export default function App() {
   const visibleClients = useMemo(() => clients.filter(c => (clientTypeFilter === "TODOS" || c.tipo === clientTypeFilter) && `${c.nome} ${c.documento || ""} ${c.email || ""} ${c.telefone || ""} ${c.tipo}`.toLocaleLowerCase("pt-BR").includes(query)), [clients, clientTypeFilter, query]);
   const upcomingVisits = visits.filter(v => v.status === "AGENDADA" && new Date(v.inicio) >= new Date());
   const upcoming = upcomingVisits.slice(0, 4);
-  const title = ({ inicio: "Visão geral", imoveis: "Imóveis", clientes: "Clientes", agenda: "Agenda de visitas", financeiro: "Financeiro", usuarios: "Usuários e acessos", documentos: "Documentos" })[page];
-  const activeGroup = screenGroups.find(group => group.pages.includes(page));
+  const title = ({ inicio: "Visão geral", imoveis: "Imóveis", clientes: "Pessoas", agenda: "Agenda", financeiro: "Financeiro", usuarios: "Equipe e acessos", documentos: "Documentos" })[page];
   const newRecord = () => { setEditing(null); setDialog(page === "clientes" ? "cliente" : page === "agenda" ? "visita" : "imovel"); };
   const edit = (kind, record) => { setEditing(record); setDialog(kind); };
 
@@ -256,19 +280,25 @@ export default function App() {
   return <div className="layout">
     <aside className="sidebar">
       <div className="brand"><span className="logo">P</span><span>PERUGINE<small>GESTÃO IMOBILIÁRIA</small></span></div>
-      <div className="label">MENU PRINCIPAL</div>
-      {screenGroups.filter(group => group.pages.some(id => canOpenPage(currentUser, id))).map(group => {
-        const targetPage = group.pages.find(id => canOpenPage(currentUser, id));
-        return <button key={group.id} className={`nav ${activeGroup?.id === group.id ? "selected" : ""}`} aria-current={activeGroup?.id === group.id ? "page" : undefined} onClick={() => { setPage(targetPage); setSearch(""); }}><span>{group.icon}</span>{group.label}{group.id === "operacao" && upcomingVisits.length > 0 && <i className="nav-count">{upcomingVisits.length}</i>}</button>;
-      })}
+      <nav className="sidebar-nav" aria-label="Navegação principal">
+        {screenGroups.map(group => {
+          const pages = group.pages.filter(item => canOpenPage(currentUser, item.id));
+          if (!pages.length) return null;
+          return <div className="nav-group" key={group.id}>
+            <div className="nav-section-label">{group.label}</div>
+            {pages.map(item => <button type="button" key={item.id} className={`nav ${page === item.id ? "selected" : ""}`} aria-current={page === item.id ? "page" : undefined} onClick={() => { setPage(item.id); setSearch(""); }}>
+              <NavigationIcon name={item.icon}/><span>{item.label}</span>{item.id === "agenda" && upcomingVisits.length > 0 && <i className="nav-count">{upcomingVisits.length}</i>}
+            </button>)}
+          </div>;
+        })}
+      </nav>
       <button className="user user-session" onClick={() => { sessionStorage.removeItem("perugineToken"); setCurrentUser(null); setAuthMode("login"); }}><i>{currentUser.nome.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase()}</i><span>{currentUser.nome}<small>{currentUser.cargo} · Sair</small></span><b>↗</b></button>
     </aside>
     <main>
-      <header><div className="breadcrumbs"><span>Perugine</span><b>/</b>{title}</div><div className="header-account"><i className="online-dot"/> <span>Olá, {currentUser.nome.split(" ")[0]}</span><i className="account-avatar">{currentUser.nome.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase()}</i></div></header>
+      <header><div className="breadcrumbs"><span>Perugine</span><b>/</b>{title}</div><div className="header-account"><span>{currentUser.nome}</span><i className="account-avatar">{currentUser.nome.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase()}</i></div></header>
       <section className="content">
-        {message && <div className="notice" role="alert">{message}<button onClick={() => setMessage("")}>×</button></div>}
-        {activeGroup?.pages.length > 1 && <nav className="section-tabs" aria-label={activeGroup.id === "cadastros" ? "Seções de cadastros" : "Seções de operação"}>{activeGroup.pages.filter(id => canOpenPage(currentUser, id)).map(id => <button key={id} type="button" className={page === id ? "active" : ""} aria-current={page === id ? "page" : undefined} onClick={() => { setPage(id); setSearch(""); }}>{({ imoveis: "Imóveis", clientes: "Pessoas", documentos: "Documentos", agenda: "Agenda", usuarios: "Equipe e acessos" })[id]}</button>)}</nav>}
-        <div className="intro"><div><span className="eyebrow">{page === "inicio" ? "PAINEL DE CONTROLE" : page === "clientes" ? "RELACIONAMENTO" : page === "agenda" ? "COMPROMISSOS" : page === "financeiro" ? "GESTÃO FINANCEIRA" : page === "usuarios" ? "ADMINISTRAÇÃO" : "CARTEIRA DE IMÓVEIS"}</span><h1>{page === "inicio" ? `Bom dia, ${currentUser.nome.split(" ")[0]}.` : title}</h1><p>{page === "inicio" ? "Uma visão clara do que acontece na Perugine hoje." : page === "clientes" ? "Conheça seus clientes e mantenha cada cadastro completo." : page === "agenda" ? "Organize as visitas e deixe cada atendimento no horário." : page === "financeiro" ? "Acompanhe aluguéis, comissão da imobiliária e repasses aos proprietários." : page === "usuarios" ? "Gerencie as contas e os acessos de cada integrante." : page === "documentos" ? "Consulte documentos de clientes e fotos dos imóveis em um só lugar." : "Encontre o imóvel certo e acompanhe cada oportunidade."}</p></div>
+        {message && <div className={`notice notice-${messageTone}`} role={messageTone === "success" ? "status" : "alert"} aria-live={messageTone === "success" ? "polite" : "assertive"}>{message}<button type="button" aria-label="Fechar mensagem" onClick={() => setMessage("")}>×</button></div>}
+        <div className="intro"><div><span className="eyebrow">{({ inicio: "VISÃO GERAL", imoveis: "CARTEIRA DE IMÓVEIS", clientes: "CADASTROS DE PESSOAS", agenda: "AGENDA DE VISITAS", financeiro: "CONTRATOS E CAIXA", usuarios: "ACESSO DA EQUIPE", documentos: "ARQUIVOS DA CARTEIRA" })[page]}</span><h1>{title}</h1><p>{page === "inicio" ? "Acompanhe a carteira, os próximos atendimentos e os recebimentos." : page === "clientes" ? "Consulte e atualize proprietários, inquilinos, fiadores e interessados." : page === "agenda" ? "Acompanhe visitas agendadas, realizadas e canceladas." : page === "financeiro" ? "Consulte locações, cobranças, recebimentos e repasses." : page === "usuarios" ? "Administre as contas da equipe e o que cada pessoa pode acessar." : page === "documentos" ? "Consulte documentos de pessoas e fotos vinculadas aos imóveis." : "Consulte disponibilidade, localização, valores e fotos dos imóveis."}</p></div>
           {((page === "clientes" && can(currentUser, "clients.manage")) || (page === "agenda" && can(currentUser, "visits.manage")) || (page === "imoveis" && can(currentUser, "properties.manage"))) && <button className="primary" onClick={newRecord}>＋ {page === "clientes" ? "Novo cliente" : page === "agenda" ? "Agendar visita" : "Cadastrar imóvel"}</button>}</div>
 
         {page === "usuarios" && can(currentUser, "users.manage") && <UserManagement currentUser={currentUser}/>}
@@ -378,6 +408,8 @@ function Dashboard({ homes, contracts, visits, canProperties, canClients, canVis
   const receivedMonth = allPayments.filter(payment => payment.status === "PAGO" && payment.referencia === currentRef).reduce((sum, payment) => sum + Number(payment.valor), 0);
   const receivedToday = allPayments.filter(payment => payment.status === "PAGO" && payment.pagoEm && dayKey(payment.pagoEm) === dayKey(now)).reduce((sum, payment) => sum + Number(payment.valor), 0);
   const occupied = homes.filter(home => home.status === "ALUGADO").length;
+  const monthLabel = now.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  const todayLabel = now.toLocaleDateString("pt-BR");
   const expiring = contracts.filter(contract => {
     const end = new Date(contract.fim);
     const days = (end - now) / 86400000;
@@ -385,16 +417,17 @@ function Dashboard({ homes, contracts, visits, canProperties, canClients, canVis
   }).sort((a, b) => new Date(a.fim) - new Date(b.fim));
   const todayVisits = visits.filter(visit => visit.status === "AGENDADA" && dayKey(visit.inicio) === dayKey(now)).sort((a, b) => new Date(a.inicio) - new Date(b.inicio));
   const metrics = [
-    ...(canProperties ? [{ label: "Imóveis ocupados", value: `${occupied} de ${homes.length}`, hint: `${homes.length - occupied} disponíveis ou em negociação`, tone: "green", onClick: () => onNavigate("imoveis") }] : []),
-    ...(canFinance ? [{ label: "Recebido no mês", value: brl(receivedMonth), hint: `${allPayments.filter(payment => payment.status === "PAGO" && payment.referencia === currentRef).length} pagamentos confirmados`, tone: "sage", onClick: () => onNavigate("financeiro") }] : []),
-    ...(canFinance ? [{ label: "Cobranças em atraso", value: brl(overdueAmount), hint: `${overdue.length} cobrança(s) aguardando`, tone: overdue.length ? "red" : "sand", onClick: () => onNavigate("financeiro") }] : []),
-    ...(canFinance ? [{ label: "Contratos a vencer", value: expiring.length, hint: "Nos próximos 60 dias", tone: "blue", onClick: () => onNavigate("financeiro") }] : [])
+    ...(canFinance ? [{ label: "Cobranças vencidas", value: brl(overdueAmount), hint: `${overdue.length} cobrança(s) até ${todayLabel}`, tone: overdue.length ? "red" : "sand", onClick: () => onNavigate("financeiro") }] : []),
+    ...(canFinance ? [{ label: "Recebido na competência", value: brl(receivedMonth), hint: `${monthLabel} · ${allPayments.filter(payment => payment.status === "PAGO" && payment.referencia === currentRef).length} pagamento(s) confirmado(s)`, tone: "sage", onClick: () => onNavigate("financeiro") }] : []),
+    ...(canFinance ? [{ label: "Contratos a vencer", value: expiring.length, hint: "Próximos 60 dias", tone: "blue", onClick: () => onNavigate("financeiro") }] : []),
+    ...(canProperties ? [{ label: "Imóveis ocupados", value: `${occupied} de ${homes.length}`, hint: `${homes.length - occupied} disponíveis ou em negociação`, tone: "green", onClick: () => onNavigate("imoveis") }] : [])
   ];
   return <div className="dashboard-view">
-    <div className="dashboard-kpis">{metrics.map(metric => <button key={metric.label} className={`dashboard-kpi kpi-${metric.tone}`} onClick={metric.onClick}><span>{metric.label}</span><b>{metric.value}</b><small>{metric.hint}<i>→</i></small></button>)}</div>
-    <div className="dashboard-primary-grid">
+    <div className="dashboard-context"><b>Períodos dos indicadores</b><span>Competência: {monthLabel} · cobranças vencidas até {todayLabel} · contratos nos próximos 60 dias.</span></div>
+    <div className="dashboard-section-heading"><h2>Prioridades de hoje</h2><p>Pendências financeiras e visitas marcadas para hoje.</p></div>
+    <div className={`dashboard-primary-grid ${canFinance !== canVisits ? "is-single" : ""}`}>
       {canFinance && <section className="dashboard-panel attention-panel"><div className="dashboard-panel-head"><div><span className="eyebrow">ACOMPANHAMENTO FINANCEIRO</span><h2>O que precisa de atenção</h2></div><span className={`dashboard-badge ${overdue.length ? "badge-warning" : "badge-success"}`}>{overdue.length} pendência(s)</span></div>
-        {overdue.length ? <><div className="overdue-summary"><b>{overdue.length} cobrança(s) em atraso · {brl(overdueAmount)}</b><span>Confira o histórico antes de registrar um recebimento.</span></div><div className="attention-list">{overdue.slice(0, 4).map(payment => <article key={payment.id}><span><b>{payment.contract.inquilino?.nome || "Inquilino"} · {payment.contract.imovel?.codigo || payment.contract.numero}</b><small>Vencimento {new Date(payment.vencimento).toLocaleDateString("pt-BR")} · {payment.referencia}</small></span><strong>{brl(payment.valor)}</strong>{canFinanceManage && <button onClick={() => onNavigate("financeiro")}>Registrar no financeiro</button>}</article>)}</div><button className="secondary" onClick={() => onNavigate("financeiro")}>Consultar cobranças</button></> : <div className="dashboard-empty-state"><b>Carteira em dia</b><span>Nenhuma cobrança vencida foi encontrada.</span></div>}
+        {overdue.length ? <><div className="overdue-summary"><b>{overdue.length} cobrança(s) em atraso · {brl(overdueAmount)}</b><span>Verifique o histórico antes de registrar um recebimento.</span></div><div className="attention-list">{overdue.slice(0, 4).map(payment => <article key={payment.id}><span><b>{payment.contract.inquilino?.nome || "Inquilino"} · {payment.contract.imovel?.codigo || payment.contract.numero}</b><small>Vencimento {new Date(payment.vencimento).toLocaleDateString("pt-BR")} · competência {payment.referencia}</small></span><strong>{brl(payment.valor)}</strong>{canFinanceManage && <button onClick={() => onNavigate("financeiro")}>Abrir Financeiro</button>}</article>)}</div><button className="secondary" onClick={() => onNavigate("financeiro")}>Ver cobranças</button></> : <div className="dashboard-empty-state"><b>Sem cobranças vencidas</b><span>Não há pagamentos vencidos em aberto.</span></div>}
       </section>}
       {canVisits && <section className="dashboard-panel today-panel"><div className="dashboard-panel-head"><div><span className="eyebrow">{now.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}</span><h2>Agenda de hoje</h2></div><button className="link" onClick={() => onNavigate("agenda")}>Abrir agenda <span>→</span></button></div>
         {todayVisits.length ? <div className="today-list">{todayVisits.slice(0, 5).map(visit => <article key={visit.id}><time>{new Date(visit.inicio).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</time><span><b>{visit.imovel?.codigo || "Visita"} · {visit.imovel?.titulo}</b><small>{visit.cliente?.nome || "Cliente"}{visit.corretor ? ` · ${visit.corretor}` : ""}</small></span></article>)}</div> : <div className="dashboard-empty-state"><b>Agenda livre por enquanto</b><span>As visitas marcadas para hoje aparecem aqui.</span></div>}
@@ -406,6 +439,8 @@ function Dashboard({ homes, contracts, visits, canProperties, canClients, canVis
       </section>}
       {canFinance && <section className="dashboard-panel cash-panel"><div className="dashboard-panel-head"><div><span className="eyebrow">RESUMO DE RECEBIMENTOS</span><h2>Caixa de hoje</h2></div><span className="dashboard-badge badge-success">{allPayments.filter(payment => payment.status === "PAGO" && payment.pagoEm && dayKey(payment.pagoEm) === dayKey(now)).length} recebimento(s)</span></div><b className="cash-total">{brl(receivedToday)}</b><p>Pagamentos registrados hoje</p><div className="cash-split"><span>Comissão da imobiliária <b>{brl(receivedToday * 0.1)}</b></span><span>Repasse aos proprietários <b>{brl(receivedToday * 0.9)}</b></span></div><button className="secondary" onClick={() => onNavigate("financeiro")}>Abrir contratos e caixa</button></section>}
     </div>
+    <div className="dashboard-section-heading"><h2>Indicadores da carteira</h2><p>Valores e contagens calculados a partir dos registros disponíveis para sua conta.</p></div>
+    <div className="dashboard-kpis">{metrics.map(metric => <button key={metric.label} className={`dashboard-kpi kpi-${metric.tone}`} onClick={metric.onClick}><span>{metric.label}</span><b>{metric.value}</b><small>{metric.hint}<i aria-hidden="true">→</i></small></button>)}</div>
     {!metrics.length && !canClients && <Empty title="Acesso limitado" text="Peça à administração acesso às áreas que você precisa consultar."/>}
   </div>;
 }
@@ -490,14 +525,27 @@ function SheetItem({ label, value }) { return <div className="sheet-item"><small
 function InspectionPanel({ inspections, homes, canManage, onCreate }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const [form, setForm] = useState({ imovelId: "", tipo: "ENTRADA", descricao: "", realizadaEm: new Date().toISOString().slice(0, 10) });
+  const submit = async event => {
+    event.preventDefault(); setSaving(true); setError("");
+    try {
+      const saved = await onCreate({ ...form, imovelId: Number(form.imovelId), realizadaEm: new Date(`${form.realizadaEm}T12:00:00`).toISOString() });
+      if (saved?.error) { setError(saved.error); return; }
+      if (saved) { setOpen(false); setForm(current => ({ ...current, descricao: "" })); }
+      else setError("A vistoria não foi salva. Confira os dados e tente novamente.");
+    } catch (reason) { setError(reason?.message || "Não foi possível salvar a vistoria. Confira os dados e tente novamente."); }
+    finally { setSaving(false); }
+  };
   return <section className="inspection-panel">
     <div className="inspection-heading"><div><span className="eyebrow">CONSERVAÇÃO E OCORRÊNCIAS</span><h2>Vistorias e manutenção</h2><p>Histórico de entrada, saída, manutenção e ocorrências por imóvel.</p></div>{canManage && <button className="secondary" type="button" onClick={() => setOpen(value => !value)}>{open ? "Fechar" : "＋ Registrar"}</button>}</div>
-    {open && <form className="inspection-form" onSubmit={async event => { event.preventDefault(); setSaving(true); const saved = await onCreate({ ...form, imovelId: Number(form.imovelId), realizadaEm: new Date(`${form.realizadaEm}T12:00:00`).toISOString() }); setSaving(false); if (saved) { setOpen(false); setForm(current => ({ ...current, descricao: "" })); } }}>
+    {open && <form className="inspection-form" onSubmit={submit}>
+      <p className="form-required-note"><span aria-hidden="true">*</span> Campos obrigatórios</p>
       <label>Imóvel<select required value={form.imovelId} onChange={event => setForm({ ...form, imovelId: event.target.value })}><option value="">Selecione</option>{homes.map(home => <option key={home.id} value={home.id}>{home.codigo} · {home.titulo}</option>)}</select></label>
       <label>Tipo<select value={form.tipo} onChange={event => setForm({ ...form, tipo: event.target.value })}><option value="ENTRADA">Entrada</option><option value="SAIDA">Saída</option><option value="MANUTENCAO">Manutenção</option><option value="OCORRENCIA">Ocorrência</option></select></label>
       <label>Data<input type="date" required value={form.realizadaEm} onChange={event => setForm({ ...form, realizadaEm: event.target.value })}/></label>
       <label className="inspection-description">Descrição<textarea required minLength={5} rows={2} value={form.descricao} onChange={event => setForm({ ...form, descricao: event.target.value })} placeholder="Descreva o estado do imóvel, reparo ou ocorrência"/></label>
+      {error && <p className="form-error" role="alert" aria-live="assertive">{error}</p>}
       <button className="primary" disabled={saving || !homes.length}>{saving ? "Salvando…" : "Salvar vistoria"}</button>
     </form>}
     {inspections.length ? <div className="inspection-list">{inspections.map(item => <article key={item.id}><span className={`inspection-type inspection-${item.tipo.toLowerCase()}`}>{({ ENTRADA: "Entrada", SAIDA: "Saída", MANUTENCAO: "Manutenção", OCORRENCIA: "Ocorrência" })[item.tipo] || item.tipo}</span><div><b>{item.imovel?.titulo || "Imóvel"}</b><p>{item.descricao}</p><small>{item.imovel?.codigo} · {new Date(item.realizadaEm).toLocaleDateString("pt-BR")}</small></div></article>)}</div> : <div className="inspection-empty">Nenhuma vistoria ou ocorrência registrada.</div>}
@@ -519,10 +567,21 @@ function FinancialSheet({ contracts, homes, clients, canManage, onCreateContract
   const paidCommission = received * 0.1;
   const paidOwnerTransfer = received - paidCommission;
   const pending = paymentRows.filter(payment => payment.status !== "PAGO").reduce((total, payment) => total + Number(payment.valor), 0);
+  const [contractError, setContractError] = useState("");
+  const submitContract = async event => {
+    event.preventDefault(); setSaving(true); setContractError("");
+    try {
+      const saved = await onCreateContract({ ...form, imovelId: Number(form.imovelId), inquilinoId: Number(form.inquilinoId), proprietarioId: Number(form.proprietarioId), fiadorId: form.fiadorId ? Number(form.fiadorId) : null, diaVencimento: Number(form.diaVencimento) });
+      if (saved?.error) { setContractError(saved.error); return; }
+      if (saved) setCreating(false);
+      else setContractError("O contrato não foi salvo. Confira os dados e tente novamente.");
+    } catch (reason) { setContractError(reason?.message || "Não foi possível salvar o contrato. Confira os dados e tente novamente."); }
+    finally { setSaving(false); }
+  };
   return <>
-    <div className="finance-section-head"><div><span className="eyebrow">CARTEIRA DE LOCAÇÕES</span><h2>Contratos e repasses</h2><p>Aluguel mensal, comissão de 10% da Perugine e repasse líquido de 90% ao proprietário.</p></div>{canManage && <button className="primary" onClick={() => setCreating(value => !value)}>{creating ? "Fechar formulário" : "＋ Nova locação"}</button>}</div>
-    {creating && <form className="finance-form" onSubmit={async event => { event.preventDefault(); setSaving(true); const saved = await onCreateContract({ ...form, imovelId: Number(form.imovelId), inquilinoId: Number(form.inquilinoId), proprietarioId: Number(form.proprietarioId), fiadorId: form.fiadorId ? Number(form.fiadorId) : null, diaVencimento: Number(form.diaVencimento) }); setSaving(false); if (saved) setCreating(false); }}>
-      <h3>Dados da locação</h3><p>Selecione os cadastros existentes para vincular o contrato ao imóvel, inquilino e proprietário.</p>
+    <div className="finance-section-head"><div><span className="eyebrow">CARTEIRA DE LOCAÇÕES</span><h2>Contratos e repasses</h2><p>Aluguel mensal, comissão de 10% da Perugine e repasse líquido de 90% ao proprietário.</p></div>{canManage && <button type="button" className="primary" onClick={() => { setCreating(value => !value); setContractError(""); }}>{creating ? "Fechar formulário" : "＋ Nova locação"}</button>}</div>
+    {creating && <form className="finance-form" onSubmit={submitContract}>
+      <h3>Dados da locação</h3><p>Selecione o imóvel e os cadastros que farão parte do contrato.</p><p className="form-required-note"><span aria-hidden="true">*</span> Campos obrigatórios</p>
       <div className="finance-form-grid"><label>Imóvel<select required value={form.imovelId} onChange={event => setForm({ ...form, imovelId: event.target.value, valorAluguel: homes.find(home => String(home.id) === event.target.value)?.valor || form.valorAluguel })}><option value="">Selecione</option>{homes.filter(home => ["DISPONIVEL", "RESERVADO"].includes(home.status)).map(home => <option value={home.id} key={home.id}>{home.codigo} · {home.titulo}</option>)}</select></label>
         <label>Inquilino<select required value={form.inquilinoId} onChange={event => setForm({ ...form, inquilinoId: event.target.value })}><option value="">Selecione</option>{clients.filter(client => client.tipo === "INQUILINO").map(client => <option value={client.id} key={client.id}>{client.nome}</option>)}</select></label>
         <label>Proprietário<select required value={form.proprietarioId} onChange={event => setForm({ ...form, proprietarioId: event.target.value })}><option value="">Selecione</option>{clients.filter(client => client.tipo === "PROPRIETARIO").map(client => <option value={client.id} key={client.id}>{client.nome}</option>)}</select></label>
@@ -533,7 +592,8 @@ function FinancialSheet({ contracts, homes, clients, canManage, onCreateContract
         <label>Fim do contrato<input required type="date" value={form.fim} onChange={event => setForm({ ...form, fim: event.target.value })}/></label>
         <label>Índice de reajuste<select value={form.indiceReajuste} onChange={event => setForm({ ...form, indiceReajuste: event.target.value })}><option value="">Definir depois</option><option value="IPCA">IPCA</option><option value="IGP-M">IGP-M</option></select></label></div>
       {(!homes.some(home => ["DISPONIVEL", "RESERVADO"].includes(home.status)) || !clients.some(client => client.tipo === "INQUILINO") || !clients.some(client => client.tipo === "PROPRIETARIO")) && <small className="finance-form-help">Cadastre um imóvel disponível, um cliente como inquilino e outro como proprietário antes de criar a locação.</small>}
-      <div className="form-actions"><button type="button" className="secondary" onClick={() => setCreating(false)}>Cancelar</button><button className="primary" disabled={saving || !homes.some(home => ["DISPONIVEL", "RESERVADO"].includes(home.status)) || !clients.some(client => client.tipo === "INQUILINO") || !clients.some(client => client.tipo === "PROPRIETARIO")}>{saving ? "Salvando…" : "Criar contrato"}</button></div>
+      {contractError && <p className="form-error" role="alert" aria-live="assertive">{contractError}</p>}
+      <div className="form-actions"><button type="button" className="secondary" onClick={() => { setCreating(false); setContractError(""); }}>Cancelar</button><button className="primary" disabled={saving || !homes.some(home => ["DISPONIVEL", "RESERVADO"].includes(home.status)) || !clients.some(client => client.tipo === "INQUILINO") || !clients.some(client => client.tipo === "PROPRIETARIO")}>{saving ? "Salvando…" : "Criar contrato"}</button></div>
     </form>}
     {contracts.length ? <div className="finance-portfolio-wrap"><table className="finance-portfolio"><thead><tr><th>IMÓVEL / CONTRATO</th><th>INQUILINO</th><th>PROPRIETÁRIO</th><th>ALUGUEL</th><th>COMISSÃO · 10%</th><th>REPASSE · 90%</th><th>VENCIMENTO</th><th></th></tr></thead><tbody>{contracts.map(contract => <Fragment key={contract.id}><tr className={expandedContract === contract.id ? "portfolio-expanded" : ""}><td><b>{contract.imovel.codigo} · {contract.imovel.titulo}</b><small>{contract.numero} · {contract.imovel.endereco}, {contract.imovel.cidade}</small></td><td>{contract.inquilino.nome}</td><td>{contract.proprietario.nome}</td><td className="portfolio-money">{brl(contract.valorAluguel)}</td><td className="portfolio-commission">{brl(Number(contract.valorAluguel) * .1)}</td><td className="portfolio-transfer">{brl(Number(contract.valorAluguel) * .9)}</td><td>Dia {contract.diaVencimento}<small>até {new Date(contract.fim).toLocaleDateString("pt-BR")}</small></td><td><button className="portfolio-open" type="button" onClick={() => setExpandedContract(current => current === contract.id ? null : contract.id)}>{expandedContract === contract.id ? "Fechar" : "Extrato"}</button></td></tr>{expandedContract === contract.id && <tr className="portfolio-detail-row"><td colSpan="8">{canManage && <AdjustmentForm contract={contract} onApply={onApplyAdjustment}/>}<FinancialStatement contract={contract} currentReference={currentReference} canManage={canManage} onCreatePayment={onCreatePayment} onReceiptPayment={payment => setReceiving({ contract, payment })} onReceipt={payment => setReceipt({ contract, payment })}/></td></tr>}</Fragment>)}</tbody><tfoot><tr><th colSpan="3">TOTAL MENSAL · {contracts.length} LOCAÇÃO(ÕES)</th><th>{brl(monthlyRent)}</th><th>{brl(monthlyRent * .1)}</th><th>{brl(monthlyRent * .9)}</th><th colSpan="2"></th></tr></tfoot></table></div> : <Empty title="Nenhuma locação cadastrada" text="Quando houver contratos de aluguel ativos, os aluguéis, comissões e repasses aparecerão nesta tabela."/>}
     <div className="finance-cash-summary"><div><span>RECEBIDO EM PAGAMENTOS</span><b>{brl(received)}</b><small>Comissão {brl(paidCommission)} · Repasse {brl(paidOwnerTransfer)}</small></div><div><span>COBRANÇAS LANÇADAS E NÃO RECEBIDAS</span><b>{brl(pending)}</b><small>{paymentRows.filter(payment => payment.status !== "PAGO").length} cobrança(s) aguardando baixa</small></div></div>
@@ -560,10 +620,20 @@ function AdjustmentForm({ contract, onApply }) {
     }).catch(reason => { if (active) setError(reason.message || "Não foi possível consultar o índice."); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [open, indice, contract.id]);
+  const applyAdjustment = async () => {
+    setSaving(true); setError("");
+    try {
+      const saved = await onApply(contract.id, { indice });
+      if (saved?.error) { setError(saved.error); return; }
+      if (saved) { setOpen(false); setPreview(null); }
+      else setError("O reajuste não foi salvo. Confira o contrato e tente novamente.");
+    } catch (reason) { setError(reason?.message || "Não foi possível salvar o reajuste. Tente novamente."); }
+    finally { setSaving(false); }
+  };
   return <div className="adjustment-box">
     <div className="adjustment-history"><span><b>Reajuste anual por índice</b><small>Último aplicado: {contract.aditamentos?.[0] ? new Date(contract.aditamentos[0].aplicadoEm).toLocaleDateString("pt-BR") : new Date(contract.inicio).toLocaleDateString("pt-BR")}</small></span>{contract.aditamentos?.length ? <div>{contract.aditamentos.map(item => <small key={item.id}>{new Date(item.aplicadoEm).toLocaleDateString("pt-BR")} · {item.indice} {item.percentual ? `(${Number(item.percentual).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}%)` : ""} · {brl(item.valorAnterior)} → <b>{brl(item.valorNovo)}</b></small>)}</div> : <small>Nenhum reajuste registrado.</small>}</div>
     <button type="button" className="adjustment-toggle" onClick={() => setOpen(value => !value)}>{open ? "Fechar cálculo" : "↻ Calcular reajuste anual"}</button>
-    {open && <div className="adjustment-live"><label>Índice previsto no contrato<select value={indice} onChange={event => setIndice(event.target.value)}><option>IPCA</option><option>IGP-M</option></select></label>{loading && <p>Consultando a série oficial e calculando os 12 meses…</p>}{error && <p className="adjustment-error">{error}</p>}{preview && !preview.eligible && <p className="adjustment-next-date">Este contrato ainda não completou um ano desde o último reajuste. Próxima data: <b>{new Date(preview.nextDate).toLocaleDateString("pt-BR")}</b>.</p>}{preview?.eligible && <><div className="adjustment-result"><div><small>ACUMULADO · {preview.indice}</small><b>{Number(preview.percentual).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}%</b><span>{new Date(preview.periodoInicio).toLocaleDateString("pt-BR", { month: "short", year: "numeric" })} a {new Date(preview.periodoFim).toLocaleDateString("pt-BR", { month: "short", year: "numeric" })}</span></div><i>→</i><div><small>NOVO ALUGUEL MENSAL</small><b>{brl(preview.valorNovo)}</b><span>Antes: {brl(preview.valorAtual)}</span></div></div><details className="adjustment-months"><summary>Ver composição dos 12 meses</summary><div>{preview.meses.map(month => <span key={month.referencia}>{month.referencia}<b>{Number(month.variacao).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}%</b></span>)}</div></details><p className="adjustment-source-note">Fonte: séries mensais SGS do Banco Central do Brasil, compostas mês a mês. Confirme a regra e a data de aplicação previstas no contrato antes de efetivar.</p><button type="button" className="primary" disabled={saving} onClick={async () => { setSaving(true); const saved = await onApply(contract.id, { indice }); setSaving(false); if (saved) { setOpen(false); setPreview(null); } }}>{saving ? "Aplicando…" : "Confirmar reajuste e aditamento"}</button></>}</div>}
+    {open && <div className="adjustment-live"><label>Índice previsto no contrato<select value={indice} onChange={event => setIndice(event.target.value)}><option>IPCA</option><option>IGP-M</option></select></label>{loading && <p>Consultando a série oficial e calculando os 12 meses…</p>}{error && <p className="adjustment-error" role="alert" aria-live="assertive">{error}</p>}{preview && !preview.eligible && <p className="adjustment-next-date">Este contrato ainda não completou um ano desde o último reajuste. Próxima data: <b>{new Date(preview.nextDate).toLocaleDateString("pt-BR")}</b>.</p>}{preview?.eligible && <><div className="adjustment-result"><div><small>ACUMULADO · {preview.indice}</small><b>{Number(preview.percentual).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}%</b><span>{new Date(preview.periodoInicio).toLocaleDateString("pt-BR", { month: "short", year: "numeric" })} a {new Date(preview.periodoFim).toLocaleDateString("pt-BR", { month: "short", year: "numeric" })}</span></div><i>→</i><div><small>NOVO ALUGUEL MENSAL</small><b>{brl(preview.valorNovo)}</b><span>Antes: {brl(preview.valorAtual)}</span></div></div><details className="adjustment-months"><summary>Ver composição dos 12 meses</summary><div>{preview.meses.map(month => <span key={month.referencia}>{month.referencia}<b>{Number(month.variacao).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}%</b></span>)}</div></details><p className="adjustment-source-note">Fonte: séries mensais SGS do Banco Central do Brasil, compostas mês a mês. Confirme a regra e a data de aplicação previstas no contrato antes de efetivar.</p><button type="button" className="primary" disabled={saving} onClick={applyAdjustment}>{saving ? "Aplicando…" : "Confirmar reajuste e aditamento"}</button></>}</div>}
   </div>;
 }
 
@@ -611,7 +681,28 @@ function PaymentReceiptForm({ contract, payment, onClose, onSave }) {
   const [error, setError] = useState("");
   const received = Number(valorRecebido) || 0;
   const change = Math.max(0, Math.round((received - amount + Number.EPSILON) * 100) / 100);
-  return <div className="receipt-overlay"><section className="receipt-paper payment-confirm-paper"><div className="modal-title"><div><span className="eyebrow">CAIXA · {payment.referencia}</span><h2>Registrar recebimento</h2></div><button type="button" aria-label="Fechar" onClick={onClose}>×</button></div><p>Confirme o recebimento de <b>{brl(amount)}</b> do inquilino <b>{contract.inquilino.nome}</b>.</p><form className="payment-confirm-form" onSubmit={async event => { event.preventDefault(); setError(""); setSaving(true); const result = await onSave({ formaPagamento, valorRecebido: received }); setSaving(false); if (result?.error) setError(result.error); }}><label>Forma de pagamento<select value={formaPagamento} onChange={event => { setFormaPagamento(event.target.value); setValorRecebido(amount.toFixed(2)); }}><option value="PIX">PIX</option><option value="DINHEIRO">Dinheiro</option><option value="TRANSFERENCIA">Transferência</option><option value="BOLETO">Boleto</option></select></label><label>Valor recebido (R$)<input type="number" inputMode="decimal" min={formaPagamento === "DINHEIRO" ? amount : amount} step="0.01" required value={valorRecebido} onChange={event => setValorRecebido(event.target.value)}/></label><div className="payment-confirm-math"><span>Valor da cobrança<b>{brl(amount)}</b></span><span>Troco<b>{formaPagamento === "DINHEIRO" ? brl(change) : brl(0)}</b></span></div>{formaPagamento === "DINHEIRO" && received < amount && <small className="adjustment-error">O valor recebido precisa cobrir a cobrança.</small>}{formaPagamento !== "DINHEIRO" && Math.abs(received - amount) > .01 && <small className="adjustment-error">Para esta forma de pagamento, informe o valor exato da cobrança.</small>}{error && <small className="adjustment-error">{error}</small>}<div className="receipt-buttons"><button type="button" className="secondary" onClick={onClose}>Cancelar</button><button className="primary" disabled={saving || received < amount || (formaPagamento !== "DINHEIRO" && Math.abs(received - amount) > .01)}>{saving ? "Registrando…" : "Confirmar recebimento"}</button></div></form></section></div>;
+  const submit = async event => {
+    event.preventDefault(); setError(""); setSaving(true);
+    try {
+      const result = await onSave({ formaPagamento, valorRecebido: received });
+      if (result?.error) setError(result.error);
+    } catch (reason) { setError(reason?.message || "Não foi possível registrar o recebimento. Tente novamente."); }
+    finally { setSaving(false); }
+  };
+  return <div className="receipt-overlay"><section className="receipt-paper payment-confirm-paper">
+    <div className="modal-title"><div><span className="eyebrow">CAIXA · {payment.referencia}</span><h2>Registrar recebimento</h2></div><button type="button" aria-label="Fechar" onClick={onClose}>×</button></div>
+    <p>Confirme o recebimento de <b>{brl(amount)}</b> do inquilino <b>{contract.inquilino.nome}</b>.</p>
+    <form className="payment-confirm-form" onSubmit={submit}>
+      <p className="form-required-note"><span aria-hidden="true">*</span> Campos obrigatórios</p>
+      <label>Forma de pagamento<select value={formaPagamento} onChange={event => { setFormaPagamento(event.target.value); setValorRecebido(amount.toFixed(2)); }}><option value="PIX">PIX</option><option value="DINHEIRO">Dinheiro</option><option value="TRANSFERENCIA">Transferência</option><option value="BOLETO">Boleto</option></select></label>
+      <label>Valor recebido (R$)<input type="number" inputMode="decimal" min={amount} step="0.01" required value={valorRecebido} onChange={event => setValorRecebido(event.target.value)}/></label>
+      <div className="payment-confirm-math"><span>Valor da cobrança<b>{brl(amount)}</b></span><span>Troco<b>{formaPagamento === "DINHEIRO" ? brl(change) : brl(0)}</b></span></div>
+      {formaPagamento === "DINHEIRO" && received < amount && <small className="adjustment-error">O valor recebido precisa cobrir a cobrança.</small>}
+      {formaPagamento !== "DINHEIRO" && Math.abs(received - amount) > .01 && <small className="adjustment-error">Para esta forma de pagamento, informe o valor exato da cobrança.</small>}
+      {error && <p className="form-error" role="alert" aria-live="assertive">{error}</p>}
+      <div className="receipt-buttons"><button type="button" className="secondary" onClick={onClose}>Cancelar</button><button className="primary" disabled={saving || received < amount || (formaPagamento !== "DINHEIRO" && Math.abs(received - amount) > .01)}>{saving ? "Registrando…" : "Confirmar recebimento"}</button></div>
+    </form>
+  </section></div>;
 }
 
 function ReceiptModal({ contract, payment, onClose }) {
@@ -676,6 +767,7 @@ function ClientForm({ initial, onSave, onCancel, busy }) {
   const updateCategory = (id, categoria) => setFiles(current => current.map(item => item.id === id ? { ...item, categoria } : item));
   return <form className="form" onSubmit={async e => { e.preventDefault(); setError(""); try { await onSave({ data: form, files }); } catch (x) { setError(x.message); } }}>
     <div className="form-section-heading"><span className="form-step">01</span><div><b>Dados do cliente</b><small>Informações de identificação e contato.</small></div></div>
+    <RequiredFieldsNote/>
     <label>Nome completo<input name="nome" required value={form.nome} onChange={change} placeholder="Nome ou razão social"/></label>
     <div className="form-row"><label>Perfil<select name="tipo" value={form.tipo} onChange={change}>{Object.entries(roleText).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>Tipo de documento<select name="tipoDocumento" value={form.tipoDocumento} onChange={change}>{Object.entries(documentText).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
     <div className="form-row"><label>{documentText[form.tipoDocumento] || "Documento"}<input name="documento" value={form.documento} onChange={change} placeholder={form.tipoDocumento === "CPF" ? "000.000.000-00" : form.tipoDocumento === "CNPJ" ? "00.000.000/0000-00" : "Número do documento"}/></label><label>Telefone<input name="telefone" value={form.telefone} onChange={change} placeholder="(00) 00000-0000"/></label></div>
@@ -694,6 +786,7 @@ function HomeForm({ initial, onSave, onCancel, busy }) {
   const addPhotos = e => { setPhotos(current => [...current, ...Array.from(e.target.files || [])]); e.target.value = ""; };
   return <form className="form" onSubmit={async e => { e.preventDefault(); setError(""); try { await onSave({ data: form, files: photos.map(file => ({ file })) }); } catch (x) { setError(x.message); } }}>
     <div className="form-section-heading"><span className="form-step">01</span><div><b>Informações do imóvel</b><small>Cadastre os detalhes que ajudam a encontrar o imóvel ideal.</small></div></div>
+    <RequiredFieldsNote/>
     <div className="form-row"><label>Código<input name="codigo" required value={form.codigo} onChange={change} placeholder="PER-002"/></label><label>Tipo de imóvel<select name="tipo" value={form.tipo} onChange={change}><option>Casa</option><option>Apartamento</option><option>Terreno</option><option>Comercial</option><option>Rural</option></select></label></div>
     <label>Nome do imóvel<input name="titulo" required value={form.titulo} onChange={change} placeholder="Ex.: Casa com quintal"/></label>
     <label>Endereço<input name="endereco" required value={form.endereco} onChange={change} placeholder="Rua, número e bairro"/></label>
@@ -713,6 +806,7 @@ function VisitForm({ homes, clients, onSave, onCancel, busy }) {
   const change = e => setForm({ ...form, [e.target.name]: e.target.value });
   return <form className="form" onSubmit={async e => { e.preventDefault(); setError(""); try { await onSave({ ...form, imovelId: Number(form.imovelId), clienteId: Number(form.clienteId), inicio: new Date(form.inicio).toISOString() }); } catch (x) { setError(x.message); } }}>
     <div className="form-section-heading"><span className="form-step">01</span><div><b>Detalhes da visita</b><small>Escolha um imóvel, um cliente e o melhor horário.</small></div></div>
+    <RequiredFieldsNote/>
     <label>Imóvel<select required name="imovelId" value={form.imovelId} onChange={change}><option value="">Selecione um imóvel</option>{homes.map(home => <option value={home.id} key={home.id}>{home.codigo} · {home.titulo}</option>)}</select></label>
     <label>Cliente interessado<select required name="clienteId" value={form.clienteId} onChange={change}><option value="">Selecione um cliente</option>{clients.map(client => <option value={client.id} key={client.id}>{client.nome}</option>)}</select></label>
     <div className="form-row"><label>Data e hora<input required type="datetime-local" name="inicio" min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)} value={form.inicio} onChange={change}/></label><label>Corretor(a)<input name="corretor" value={form.corretor} onChange={change} placeholder="Nome do responsável"/></label></div>
@@ -723,4 +817,5 @@ function VisitForm({ homes, clients, onSave, onCancel, busy }) {
   </form>;
 }
 
-function Actions({ error, cancel, label, disabled = false }) { return <><p className="form-error">{error}</p><div className="form-actions"><button type="button" className="secondary" onClick={cancel}>Cancelar</button><button className="primary" disabled={disabled}>{label}</button></div></>; }
+function RequiredFieldsNote() { return <p className="form-required-note"><span aria-hidden="true">*</span> Campos obrigatórios</p>; }
+function Actions({ error, cancel, label, disabled = false }) { return <>{error && <p className="form-error" role="alert" aria-live="assertive">{error}</p>}<div className="form-actions"><button type="button" className="secondary" onClick={cancel}>Cancelar</button><button className="primary" disabled={disabled}>{label}</button></div></>; }
