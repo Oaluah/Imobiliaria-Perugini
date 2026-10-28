@@ -42,6 +42,8 @@ Este documento complementa o README principal do projeto e descreve as alteraç�
 
 ## Verificação
 
+teste teste
+
 - Os arquivos JSX foram analisados com o parser Babel instalado no projeto.
 - A compilação de produção foi tentada com `npm run build --workspace=@perugine/web`, mas o ambiente atual bloqueou a inicialização de subprocessos do Vite com `spawn EPERM`. Portanto, a compilação completa não pôde ser confirmada aqui.
 - Nenhuma suíte de testes foi executada.
